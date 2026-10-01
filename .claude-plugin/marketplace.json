@@ -1,0 +1,15 @@
+{
+  "name": "otty-collaboration",
+  "owner": {
+    "name": "VibeMage"
+  },
+  "description": "Agent skill for two-way Claude Code and Codex collaboration in Otty.",
+  "plugins": [
+    {
+      "name": "otty-collaboration",
+      "source": "./",
+      "description": "Two-way handoffs between Claude Code and Codex sessions running in Otty.",
+      "version": "0.1.0"
+    }
+  ]
+}

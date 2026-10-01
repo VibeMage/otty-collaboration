@@ -1,0 +1,32 @@
+#!/bin/sh
+# Codex launcher for Otty. Install it ahead of the real codex on PATH (e.g.
+# ~/.local/bin/codex).
+#
+# Inside Otty, pin this pane's OTTY_PANE_ID into the environment of the commands
+# Codex runs. Otherwise those commands can see the OTTY_PANE_ID of whichever pane
+# first started Codex's shared background server. Outside Otty it changes
+# nothing.
+
+self=$(realpath "$0" 2>/dev/null || echo "$0")
+
+real=""
+old_ifs=$IFS
+IFS=:
+for dir in $PATH; do
+  cand="$dir/codex"
+  [ -x "$cand" ] || continue
+  [ "$(realpath "$cand" 2>/dev/null || echo "$cand")" = "$self" ] && continue
+  real=$cand
+  break
+done
+IFS=$old_ifs
+
+if [ -z "$real" ]; then
+  echo "codex wrapper: no other codex found on PATH" >&2
+  exit 127
+fi
+
+if [ -n "$OTTY_PANE_ID" ]; then
+  exec "$real" -c "shell_environment_policy.set.OTTY_PANE_ID=\"$OTTY_PANE_ID\"" "$@"
+fi
+exec "$real" "$@"
