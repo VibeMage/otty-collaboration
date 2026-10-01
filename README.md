@@ -1,5 +1,7 @@
 # otty-collaboration
 
+English | [简体中文](README.zh-CN.md)
+
 An agent skill that lets Claude Code and Codex sessions hand work to each other
 and **report back** while running side by side in [Otty](https://otty.sh).
 
