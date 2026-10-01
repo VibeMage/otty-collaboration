@@ -14,6 +14,9 @@ pane.
 
 - **Channel choice**: Claude ↔ Claude uses Claude Code's native `SendMessage`;
   anything involving Codex types into the target pane through the `otty` CLI.
+- **Exact addressing**: resolve the Claude in a given Otty pane to its session
+  socket (pane → PID → `/tmp/cc-socks/<pid>.sock`) instead of guessing among
+  `ListAgents` names; native delivery never touches a user's draft.
 - **Reply envelope**: every handoff starts with `[otty-handoff]` and names the
   sender's pane or session name, tracker issue and `reply-on` triggers.
 - **Reply triggers**: the recipient answers on `blocker`, `conflict`,
@@ -75,6 +78,32 @@ wrapper.
 `skills/otty-collaboration` into `~/.claude/skills/` and `~/.codex/skills/`
 instead, so both agents read your working copy.
 
+## Delivery timing with Codex
+
+Observed with Codex 0.159.2 in Otty 1.5.4, using default key bindings in a
+normally configured working session:
+
+- **Enter delivers promptly.** Text submitted with Enter while Codex is working
+  shows as "Messages to be submitted after next tool call" and reaches the model
+  at the next tool boundary, in the same turn. The skill tells senders to use
+  Enter. Startup, plan streaming and recovery states can still defer it; verify
+  the observed delivery state.
+- **Tab defers while working.** When idle, Tab may submit immediately. During
+  a running turn, text submitted with Tab lands under "Queued follow-up inputs"
+  and reaches the model only when the current turn ends. The skill describes how
+  an owner can safely restore and resubmit a deferred peer reply.
+- **`codex queue --thread <uuid> --message <text>` is also deferred** (delivered
+  after the current turn), and only reaches sessions on Codex's shared
+  background server.
+- **The `bin/codex` wrapper runs Codex standalone** (any `-c` override does), so
+  `codex queue` and `codex app-server proxy` cannot reach that TUI by default.
+  Typing into its pane is the delivery path.
+- **No timer or background watcher.** Senders verify timely delivery; owners
+  read replies as they arrive. Tracker-first checks are a fallback before
+  dependent actions or ending a turn, once for a clearly overdue reply, or when
+  delivery trouble is reported. Pane capture and queue recovery are used only
+  when the tracker shows a report that has not reached the model.
+
 ## Trust boundary
 
 Envelopes are plain text and not authenticated: anything that can type into a
@@ -86,8 +115,9 @@ do not control.
 ## Status
 
 Validated end to end for the `done` path (Claude → Codex over Otty, Claude →
-Claude over `SendMessage`). The `blocker`, `conflict` and `disagree` paths are
-specified but have had less real use. Agent CLIs change quickly; version-specific
+Claude over `SendMessage`), and for mid-turn delivery to a working Codex with
+Enter and recovery of a Tab-deferred reply. The `blocker`, `conflict` and
+`disagree` paths are specified but have had less real use. Agent CLIs change quickly; version-specific
 notes in `SKILL.md` say which version they were observed on.
 
 ## License

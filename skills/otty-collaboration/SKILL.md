@@ -1,6 +1,6 @@
 ---
 name: otty-collaboration
-description: Share user-authorized findings or task handoffs between existing Claude Code and Codex conversations (native SendMessage between Claude sessions, Otty panes when Codex is involved), and reply to the owner when you receive one. Use when sending a cross-agent handoff, or when a message starting with `[otty-handoff]` arrives. Not for general terminal operations or automatic synchronization.
+description: Share user-authorized findings or task handoffs between existing Claude Code and Codex conversations, reply to the owner, and check pending peer replies during long turns. Use when sending a cross-agent handoff, receiving `[otty-handoff]` or `[otty-reply]`, or waiting for an authorized peer report. Not for general terminal operations or automatic synchronization of project files.
 ---
 
 # Otty collaboration
@@ -13,8 +13,9 @@ that prerequisite rather than guessing commands.
 
 A handoff is two-way. The **owner** is the agent that sends a task or finding;
 the **recipient** is the agent that receives it. The owner keeps the user-facing
-thread; the recipient reports back to the owner at the moments listed below, so
-the owner does not have to poll the recipient's pane to learn what happened.
+thread; the recipient reports back at the moments listed below. Whoever sends a
+message is responsible for verifying that it was delivered promptly; the owner
+does not poll, and checks only in the fallback cases below.
 
 ## Choose the channel
 
@@ -30,9 +31,20 @@ the owner does not have to poll the recipient's pane to learn what happened.
   Codex 0.159.2 enabling it exposed no board tools, and Codex's
   `collaboration.*` tools reach only its own spawned-agent tree.
 
-`ListAgents` names (e.g. `myproject-3f`) do not say which task a session is on.
-When several peers share a project, match by the `session:` note on the peer's
-tracker claim (see the recipient steps) or ask the user; never guess. A peer in
+`ListAgents` names (e.g. `myproject-3f`) do not say which task or pane a
+session belongs to. When several peers share a project, never guess. To reach
+the Claude in a known Otty pane, resolve it exactly:
+
+1. `otty pane show --pane <pane> --json` gives its agent, cwd and session ID.
+2. Each local Claude Code session listens on `/tmp/cc-socks/<pid>.sock`. Find
+   the PID whose environment has `OTTY_PANE_ID=<that pane without the p_
+   prefix>` (`ps eww -o command= -p <pid>`) and whose cwd matches.
+3. Send to `uds:/tmp/cc-socks/<pid>.sock` as the `SendMessage` address; it is
+   the same form an incoming message's `from` attribute uses.
+
+Otherwise match by the `session:` note on the peer's tracker claim (see the
+recipient steps) or ask the user. Native delivery never touches the peer's
+composer, so it is the right channel when that composer holds a user draft. A peer in
 a different permission mode holds your message for its user's approval, and a
 peer must never be asked to do what your own permissions would block.
 
@@ -95,10 +107,25 @@ For a prepared message file, send and submit separately:
     otty pane capture --pane <verified-id> --lines 200
 
 For a single-line message use `--no-escape` and proper shell quoting. Verify the
-message appears as submitted or queued, rather than remaining in the composer.
+message left the composer and shows as delivered or pending ("Messages to be
+submitted after next tool call"), not deferred or still sitting unsent.
 A successful send or processing hook proves submission, not completion or
-agreement. If submission is uncertain, inspect the pane before retrying to avoid
-duplicates. Respect exit 7 refusals; do not enable input permissions implicitly.
+agreement. With Codex 0.159.2's default keymap in a normally configured working
+session, **Enter requests submission/steer; Tab defers until the current turn
+ends**. When idle, Tab can submit immediately too. Startup, plan streaming,
+rate-limit recovery and other gated states can defer even Enter. Do not replace
+Enter with Tab for a collaboration report unless the user explicitly wants
+deferred delivery. After Enter, a working Codex can show
+"Messages to be submitted after next tool call"; this is pending mid-turn
+delivery. "Queued follow-up inputs" is a different, deferred state. A truncated
+queue preview does not prove the owner has read the full message.
+
+The sender is responsible for timely submission and checking the observed
+delivery state. If submission is uncertain, inspect before retrying to avoid
+duplicates. If the report remains deferred, post the full reply in the shared
+tracker and signal the delivery trouble there. The owner can then apply the
+fallback below. Respect exit 7 refusals; do not enable input permissions
+implicitly.
 
 Pitfalls seen in practice:
 
@@ -128,11 +155,81 @@ authorization. `reply-on=none` means a one-way notice; the default is all four
 triggers.
 
 After sending, report the observed state to the user and continue your own work.
-When `reply-on` is not `none`, expect replies to arrive as queued input (Otty)
-or as a cross-session message (native): treat each as a report from the
+When `reply-on` is not `none`, expect replies to arrive as input delivered at
+your next tool boundary (Otty, sent with Enter) or as a cross-session message
+(native): treat each as a report from the
 recipient, verify its claims against the worktree and tracker, and relay what
-matters to the user. Replies to an agent in a long turn wait until that turn
-ends, so an owner that coordinates others should keep its own turns short.
+matters to the user.
+
+Text submitted with Tab is held by Codex as a deferred follow-up. Enter can
+deliver it during the current turn. Normally, the sender verifies timely
+submission and the owner reads the report as it arrives at a tool boundary.
+Do not continue unrelated work while a known peer report remains unread.
+
+## Owner: delivery fallback
+
+There is no timer or routine polling. Normal delivery is sender-verified Enter
+submission, followed by the owner reading the report at a tool boundary. Check
+for an outstanding `reply-on` report only when there is a concrete reason:
+
+- Before taking an action that depends on it, such as assigning dependent work,
+  closing or merging, or declaring completion.
+- Before ending the turn or giving the final answer while the handoff is open.
+- Once when the reply is clearly overdue for its delegated task; do not start
+  periodic re-checks.
+- When the sender or shared tracker signals delivery trouble, such as a reply
+  recorded in the tracker but never delivered, or a deferred queue report.
+
+Check the shared tracker first (`bd --actor <actor> comments <id>` for Beads).
+Capture your **own verified pane** and consider recovery only if the tracker
+shows a report that has not reached the model. This fallback is the owner's
+workflow, not an installed background watcher. Do not fabricate a missing reply
+or claim submission proves completion.
+
+Read a delivered `[otty-reply]` immediately. Under "Queued follow-up inputs",
+only a truncated preview is visible; the message has not entered the model's
+context. Do not describe reading the tracker as consuming that queue item.
+
+If the user has authorized automatic reading of peer reports, restore and steer
+a deferred **last queued peer reply** as follows:
+
+1. Rediscover and capture your own pane. Match agent, cwd and visible recent
+   work; an inherited `CODEX_THREAD_ID` may differ from the live pane's session
+   ID. Confirm the composer is empty and the last queued item is a recognized
+   `[otty-reply]` from the authorized peer for an outstanding tracker issue.
+   Save the capture. Do not promote a user's deferred message or operate when a
+   draft or human approval is present. If queue order is unclear, leave it intact
+   and read the shared tracker.
+2. Restore the last queued item with Shift+Left. Otty 1.5.4 rejects
+   `key:Shift+Left`; use its documented raw-byte interface:
+
+       otty pane send-text --pane <verified-owner-id> '\e[1;2D'
+       otty pane capture --pane <verified-owner-id> --lines 200
+
+3. Read the full restored message in the composer. Verify the envelope, tracker
+   and body against the peer/tracker. Restoration allows reading; it is not
+   delivery. If this is not the expected reply, leave its exact text in the
+   composer: do not press Enter or Tab, clear it, or restore another item. Save
+   the capture and tell the user that the queue item is now a draft requiring
+   their handling. Do not use Tab as an automatic rollback; it may submit.
+4. Submit the exact restored text without edits, using Enter, then capture:
+
+       otty pane send-keys --pane <verified-owner-id> key:Enter
+       otty pane capture --pane <verified-owner-id> --lines 200
+
+   Confirm it leaves the composer and appears delivered or pending after the
+   next tool call. Process it once when it arrives; do not create a reply loop.
+
+This recovery was verified with a real Claude report in Codex 0.159.2: Tab left
+it queued during a long turn; Shift+Left plus Enter delivered it at the next
+boundary while the owner remained working. It does not require the shared daemon.
+
+`thread/queue/list` exists in the app-server protocol, but a standalone TUI is
+not automatically reachable through `codex app-server proxy`. The repository
+wrapper's `-c` override runs Codex standalone. Do not start a separate app-server
+and mistake its queue for the live TUI's, or change daemon/config settings just
+to inspect pending input. Use the verified pane path when no live control socket
+exists.
 
 ## Recipient: when and how to reply
 
@@ -150,7 +247,9 @@ When a message starts with `[otty-handoff]`:
    beads: `bd --actor <actor> update <id> --append-notes "session:
    name=<ListAgents name> pane=<verified Otty pane>"` (Codex has no ListAgents
    name; give the pane). Owners do the same when they claim work they will hand
-   off.
+   off. If the issue is already assigned to the owner and you are only helping,
+   do not claim it (a claim reassigns it); add a comment with the same
+   `session:` note instead.
 3. Reply to the owner, using the same channel, when a listed `reply-on` trigger
    occurs:
    - **blocker**: you cannot proceed without information, a decision or a
@@ -166,7 +265,10 @@ When a message starts with `[otty-handoff]`:
 
 Start each reply with `[otty-reply] from=<your agent> pane=<your verified pane>
 tracker=<issue id> type=<trigger>` so the owner can match it. Keep it short; put
-detail in the tracker and reference the issue ID. If the owner's composer holds
+detail in the tracker and reference the issue ID. When the owner is Codex (or
+any agent that may be mid-turn), also post the same reply on the tracker issue
+so the owner can pull it without waiting for its turn to end; with beads:
+`bd --actor <actor> comments add <id> "[otty-reply] ..."`. If the owner's composer holds
 unsent input or the owner is awaiting human approval, do not send; record the
 reply in the tracker and tell your own user instead.
 

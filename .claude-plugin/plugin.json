@@ -1,7 +1,7 @@
 {
   "name": "otty-collaboration",
   "description": "Two-way handoffs between Claude Code and Codex sessions running in Otty: reply envelope, reply triggers, loop and authority guards.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": { "name": "VibeMage" },
   "repository": "https://github.com/VibeMage/otty-collaboration",
   "license": "MIT",
