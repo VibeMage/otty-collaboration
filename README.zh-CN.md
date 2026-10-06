@@ -10,8 +10,8 @@
 
 ## 内容
 
-- **选择通道**：Claude 之间用 Claude Code 原生的 `SendMessage`；只要涉及 Codex，
-  就通过 `otty` CLI 往目标 pane 里输入。
+- **选择通道**：Claude 之间用 Claude Code 原生的 `SendMessage`；Codex → Claude
+  可用一次性原生转发保留对方草稿；接收方是 Codex 时，通过 `otty` CLI 往目标 pane 输入。
 - **精确寻址**：把指定 Otty pane 里的 Claude 解析到它的会话 socket（pane → 进程号
   → `/tmp/cc-socks/<pid>.sock`），不在 `ListAgents` 的名字之间猜；原生投递不会碰到
   用户的草稿。
@@ -22,7 +22,8 @@
 - **防护规则**：不来回客套；同一问题三轮没谈拢就交给人；agent 不能替用户批准；
   共享任务追踪器的记录优先于终端消息。
 - **实战记录**：往别的 agent 输入框里打字时的 TUI 陷阱，以及 Codex 读到过期
-  `OTTY_PANE_ID` 的问题（附修复用的包装脚本）。
+  `OTTY_PANE_ID` 的问题，来源是共享后台服务或缓存的 shell 快照（附可同时修复两者的
+  包装脚本）。
 
 ## 环境要求
 
@@ -93,6 +94,13 @@ command -v codex   # 应输出 ~/.local/bin/codex
   或收到送达故障信号时，才先查看共享追踪器；追踪器有尚未送达的回报时，再查看
   自己的 pane 并按需恢复队列。
 
+**Codex → 已有 Claude** 可通过已实测的单次 `claude -p` 转发调用 `SendMessage`，
+不碰目标输入框的草稿。先精确核实当前 pane／PID／cwd／socket，步骤见
+[原生转发说明](skills/otty-collaboration/references/claude-relay.md)。入队收据不代表
+对方完成任务，短命转发进程的空闲订阅也不会持续通知 Codex 发起方。对方应按信封
+指定的发起方 pane，用 Otty Enter 回复并在共享追踪器留副本。这没有给独立运行的
+Codex TUI 增加原生消息接收接口。
+
 ## 信任边界
 
 信封是纯文本，没有认证：任何能往 pane 里输入的东西都能冒充 `[otty-handoff]`。
@@ -102,7 +110,7 @@ agent。不要用它接收来自你无法控制的 pane 的任务。
 ## 状态
 
 `done` 路径已端到端验证（Claude → Codex 走 Otty，Claude → Claude 走
-`SendMessage`），向工作中的 Codex 用 Enter 在同一轮内送达、以及取回被 Tab 延后的
+`SendMessage`，Codex → Claude 走单次原生转发且保留对方草稿），向工作中的 Codex 用 Enter 在同一轮内送达、以及取回被 Tab 延后的
 回报也已验证。`blocker`、`conflict`、`disagree` 三条路径已有规则，但实际使用
 还较少。agent CLI 更新很快，`SKILL.md` 中与版本相关的说明都注明了观察到的版本。
 

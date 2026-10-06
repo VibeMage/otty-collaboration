@@ -9,7 +9,7 @@
       "name": "otty-collaboration",
       "source": "./",
       "description": "Two-way handoffs between Claude Code and Codex sessions running in Otty.",
-      "version": "0.2.0"
+      "version": "0.3.0"
     }
   ]
 }

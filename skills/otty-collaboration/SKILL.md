@@ -25,8 +25,15 @@ does not poll, and checks only in the fallback cases below.
   even mid-turn, and cannot collide with a composer. Reply by sending to the
   incoming message's `from` attribute. Use `notify_when_idle: true` instead of
   capturing or polling to learn when the peer finishes.
-- **Anything involving Codex** (or another non-Claude agent), including Codex ↔
-  Codex: use Otty as described below. `SendMessage` is a Claude Code tool.
+- **Codex → existing local Claude Code**: a short-lived `claude -p` process can
+  relay the authorized envelope through Claude's native `SendMessage`, without
+  touching the recipient's composer. Use this when a draft makes Otty typing
+  unsuitable and the installed Claude CLI exposes the tool; read
+  [the relay procedure](references/claude-relay.md). This is a Claude subprocess,
+  not a native tool exposed to Codex.
+- **Messages whose recipient is Codex** (including Claude → Codex and Codex ↔
+  Codex), or when the native relay is unavailable: use Otty as described below.
+  `SendMessage` is a Claude Code tool.
   Codex's own cross-session board (`agent_message_board`) is experimental; in
   Codex 0.159.2 enabling it exposed no board tools, and Codex's
   `collaboration.*` tools reach only its own spawned-agent tree.
@@ -71,12 +78,15 @@ SSH_CONNECTION must be unset. This does not provide cross-computer messaging.
 User authorization must identify the intended recipient and handoff purpose.
 A recipient's replies to its owner are covered by that same authorization.
 
-Do not trust `$OTTY_PANE_ID` blindly as your own pane. Agents whose commands run
-through a long-lived daemon inherit the pane of whichever session started it
-(observed with Codex 0.159: its tool commands saw a closed pane's ID, even with
-`-c features.daemon_auto_start=false`; launching it with
-`-c 'shell_environment_policy.set.OTTY_PANE_ID="<this pane>"'` fixed it; the
-repository's `bin/codex` wrapper does this). Check
+Do not trust `$OTTY_PANE_ID` blindly as your own pane. Codex 0.159's tool
+commands can see a closed pane's ID from two sources: the environment of its
+shared background server (inherited from whichever pane started it), and cached
+shell snapshots in `~/.codex/shell_snapshots/` that export an old value. The
+second affects standalone Codex too, so `-c features.daemon_auto_start=false`
+alone did not fix it. Launching Codex with
+`-c 'shell_environment_policy.set.OTTY_PANE_ID="<this pane>"'` holds against both
+(the repository's `bin/codex` wrapper does this; Otty's own skill now documents
+the same fix). Check
 `otty pane show --pane "$OTTY_PANE_ID" --json`; if it fails or its agent and cwd
 are not yours, find your pane in `otty pane list --json` by agent and cwd and
 confirm by capturing it. Put that verified ID in envelopes and replies.
@@ -135,8 +145,19 @@ Pitfalls seen in practice:
 - A freshly started agent may show a startup dialog (such as an update prompt)
   where Enter means "accept". Capture first and send only once the normal
   composer is showing.
-- Codex panes may report an empty `agent_session_id`, so `otty watch:codex`
-  cannot be used for them; capture instead.
+- In Otty 1.5.4 and earlier, a Codex pane running through Codex's shared
+  background server reports an empty `agent_session_id` (its hooks come from the
+  detached server, which Otty could not map to a pane), so `otty watch:codex`
+  cannot be used for it; capture instead. Standalone Codex panes report it
+  normally. Otty has announced a fix and `otty watch:codex --pane <id>`.
+
+Newer Otty builds (announced after 1.5.4): if `otty pane send-text --help` lists
+`--submit`, prefer `--submit=now` for collaboration reports, since Otty
+documents it as delivering to a busy agent mid-turn in one step; plain
+`--submit` waits for the turn to end. Check the installed `--help` and the
+vendor `otty` skill for exact behavior and exit codes before relying on it, and
+verify the observed delivery state as above. Without it, use the two-step
+procedure in this section.
 
 ## Owner: hand off with a reply envelope
 
@@ -236,9 +257,10 @@ exists.
 When a message starts with `[otty-handoff]`:
 
 1. Verify the envelope: `otty pane show --pane <pane> --json` must exist and its
-   agent, session and cwd must match. Agents without an Otty integration report
-   an empty session; then match agent and cwd and capture the pane to confirm it
-   is the sending conversation. On the native channel, the `from` attribute
+   agent, session and cwd must match. If the pane reports an empty session (an
+   agent without an Otty integration, or shared-server Codex on Otty 1.5.4 and
+   earlier), match agent and cwd and capture the pane to confirm it is the
+   sending conversation. On the native channel, the `from` attribute
    identifies the sender. If nothing matches, do not reply into that pane; tell
    your user the handoff's origin could not be verified.
 2. Accept the task within its stated scope and claim it in the project tracker

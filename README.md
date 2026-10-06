@@ -13,7 +13,8 @@ pane.
 ## What it covers
 
 - **Channel choice**: Claude ↔ Claude uses Claude Code's native `SendMessage`;
-  anything involving Codex types into the target pane through the `otty` CLI.
+  Codex → Claude can use a short-lived native relay that preserves drafts.
+  Messages to Codex use the target pane through the `otty` CLI.
 - **Exact addressing**: resolve the Claude in a given Otty pane to its session
   socket (pane → PID → `/tmp/cc-socks/<pid>.sock`) instead of guessing among
   `ListAgents` names; native delivery never touches a user's draft.
@@ -25,7 +26,8 @@ pane.
   without agreement, agents never approve on the user's behalf, and the shared
   tracker outranks terminal messages.
 - **Field notes**: TUI pitfalls when typing into another agent's composer, and
-  Codex seeing a stale `OTTY_PANE_ID` (with a wrapper that fixes it).
+  Codex seeing a stale `OTTY_PANE_ID` from its shared server or cached shell
+  snapshots (with a wrapper that fixes both).
 
 ## Requirements
 
@@ -104,6 +106,14 @@ normally configured working session:
   delivery trouble is reported. Pane capture and queue recovery are used only
   when the tracker shows a report that has not reached the model.
 
+For **Codex → an existing Claude**, a verified one-shot `claude -p` relay can use
+`SendMessage` without touching the target's draft. Resolve the exact live
+pane/PID/cwd/socket first; see [the procedure](skills/otty-collaboration/references/claude-relay.md).
+Its enqueue receipt is not recipient completion, and a short-lived relay's idle
+subscription does not notify the Codex owner durably. The recipient replies to
+the owner named in the envelope with Otty Enter and a tracker copy. This does
+not provide native ingress into a standalone Codex TUI.
+
 ## Trust boundary
 
 Envelopes are plain text and not authenticated: anything that can type into a
@@ -115,7 +125,8 @@ do not control.
 ## Status
 
 Validated end to end for the `done` path (Claude → Codex over Otty, Claude →
-Claude over `SendMessage`), and for mid-turn delivery to a working Codex with
+Claude over `SendMessage`, Codex → Claude through a one-shot native relay with
+the recipient's draft preserved), and for mid-turn delivery to a working Codex with
 Enter and recovery of a Tab-deferred reply. The `blocker`, `conflict` and
 `disagree` paths are specified but have had less real use. Agent CLIs change quickly; version-specific
 notes in `SKILL.md` say which version they were observed on.
